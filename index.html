@@ -65,10 +65,9 @@ footer{border-top:1px solid var(--border);text-align:center;color:var(--muted);p
 </style>
 </head>
 <body>
-<header><h1>Twinko Jr's <b>Hub</b></h1><p>Overlays &nbsp;/&nbsp; Downloader &nbsp;/&nbsp; Sound Effects</p></header>
+<header><h1>Twinko Jr's <b>Hub</b></h1><p>Overlays &nbsp;/&nbsp; Sound Effects</p></header>
 <nav id="tabs">
   <button class="active" data-t="overlays">Overlays</button>
-  <button data-t="yt">YouTube Downloader</button>
   <button data-t="sfx">Sound Effects</button>
 </nav>
 <main>
@@ -85,20 +84,6 @@ footer{border-top:1px solid var(--border);text-align:center;color:var(--muted);p
   <div class="panel soon"><h3>Coming Soon&hellip;</h3></div>
 </section>
 
-<section id="yt">
-  <h2>YouTube MP3 Downloader</h2>
-  <p class="sub">Paste a link, choose MP3 or MP4, then press Start.</p>
-  <div class="panel">
-    <div class="ytbar"><input type="url" id="yturl" placeholder="Paste link here..."><button class="btn alt" id="ytpaste" type="button">Paste</button></div>
-    <div class="row">
-      <div class="seg" id="ytfmt"><button class="on" data-f="mp3" type="button">MP3</button><button data-f="mp4" type="button">MP4</button></div>
-      <button class="btn" id="ytgo" type="button">Start</button>
-    </div>
-    <div class="err" id="yterr"></div>
-    <div id="yt-out"></div>
-    <p class="note">By using this tool you confirm you own the content or have permission to download it. A web page cannot convert YouTube videos on its own, so Start needs your own conversion server. Set <code>DOWNLOAD_API</code> in the code to its address.</p>
-  </div>
-</section>
 </main>
 <footer>Twinko Jr's Hub</footer>
 
@@ -121,12 +106,18 @@ const OVERLAYS=[
 ];
 let dl=null;const dlBtns=[];
 const cerr=document.getElementById('cerr');
-try{ if(window.claude&&claude.use){ claude.use('downloads').then(d=>{ if(d){dl=d;dlBtns.forEach(b=>b.hidden=false)} }).catch(()=>{}); } }catch(e){}
+try{ if(window.claude&&claude.use){ claude.use('downloads').then(d=>{ if(d)dl=d }).catch(()=>{}); } }catch(e){}
 function bytes(src){const bin=atob(src.split(',')[1]);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u}
 async function save(name,src){
   cerr.textContent='';
-  try{await dl.save({filename:name,data:new Blob([bytes(src)],{type:'video/mp4'})})}
-  catch(e){if(e&&e.code!=='declined')cerr.textContent='Download unavailable: '+(e.message||'unknown error')}
+  const blob=new Blob([bytes(src)],{type:'video/mp4'});
+  if(dl){
+    try{await dl.save({filename:name,data:blob})}
+    catch(e){if(e&&e.code!=='declined')cerr.textContent='Download unavailable: '+(e.message||'unknown error')}
+    return;
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
 const list=document.getElementById('ovlist');
 OVERLAYS.forEach((o,i)=>{
@@ -135,7 +126,7 @@ OVERLAYS.forEach((o,i)=>{
   <div class="panel"><span class="tag">Overlay ${String(i+1).padStart(2,'0')}</span><h3>${o.name}</h3>
   <p class="note" style="margin-top:8px">${o.desc}</p>
   <dl><dt>Format</dt><dd>MP4, 1080 x 1080</dd><dt>Length</dt><dd>${o.dur}</dd><dt>Audio</dt><dd>Included</dd></dl>
-  <div class="row"><button class="btn d" hidden>Download Video (MP4)</button></div></div>`;
+  <div class="row"><button class="btn d">Download Video (MP4)</button></div></div>`;
   const stg=w.querySelector('.stage'),d=w.querySelector('.d');
   if(o.prev){
     stg.classList.add('solid');
@@ -144,36 +135,10 @@ OVERLAYS.forEach((o,i)=>{
     const im=document.createElement('img');im.alt=o.name;im.src=o.gif;stg.appendChild(im);
   }
   d.onclick=()=>save(o.file,o.mp4);
-  dlBtns.push(d);if(dl)d.hidden=false;
+  
   list.appendChild(w);
 });
 
-// YouTube
-const DOWNLOAD_API=''; // e.g. 'https://your-server.com/convert'
-let fmt='mp3';
-function ytId(u){
-  try{const x=new URL(u);
-    if(x.hostname.includes('youtu.be'))return x.pathname.slice(1);
-    if(x.hostname.includes('youtube.com')){
-      if(x.searchParams.get('v'))return x.searchParams.get('v');
-      const m=x.pathname.match(/\/(shorts|embed|live)\/([\w-]{11})/);if(m)return m[2];
-    }
-  }catch(e){}return null;
-}
-const err=document.getElementById('yterr'),out=document.getElementById('yt-out'),inp=document.getElementById('yturl');
-document.querySelectorAll('#ytfmt button').forEach(b=>b.onclick=()=>{
-  fmt=b.dataset.f;document.querySelectorAll('#ytfmt button').forEach(x=>x.classList.toggle('on',x===b));
-});
-document.getElementById('ytpaste').onclick=async()=>{
-  try{inp.value=await navigator.clipboard.readText()}catch(e){err.textContent='Paste is blocked here. Press Ctrl+V or long-press in the box instead.'}
-};
-document.getElementById('ytgo').onclick=()=>{
-  err.textContent='';const link=inp.value.trim(),id=ytId(link);
-  if(!id){out.innerHTML='';err.textContent='That is not a valid YouTube link.';return}
-  out.innerHTML='<iframe src="https://www.youtube.com/embed/'+encodeURIComponent(id)+'" allowfullscreen></iframe>';
-  if(!DOWNLOAD_API){err.textContent='Preview loaded. Conversion is not connected yet. Set DOWNLOAD_API in the code to your own server.';return}
-  window.open(DOWNLOAD_API+'?format='+fmt+'&url='+encodeURIComponent(link),'_blank');
-};
 </script>
 </body>
 </html>

@@ -48,6 +48,14 @@ dt{color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font:400 .62r
 .seg{display:inline-flex;border:1px solid var(--border)}
 .seg button{background:transparent;color:var(--muted);border:0;padding:8px 16px;font:500 .66rem "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.12em;cursor:pointer}
 .seg button.on{background:var(--inv);color:var(--invt)}
+.lbl{display:block;margin:14px 0 6px;color:var(--muted);font:400 .62rem "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}
+.lbl:first-child{margin-top:0}
+input[type=text],input[type=password],select,textarea{width:100%;padding:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:inherit;font-size:.85rem;border-radius:2px}
+textarea{resize:vertical}
+.two{display:grid;grid-template-columns:1fr 160px;gap:12px}
+@media(max-width:600px){.two{grid-template-columns:1fr}}
+#tplay{width:100%;margin-top:14px;filter:grayscale(1)}
+#tplay[hidden]{display:none}
 .soon{text-align:center;padding:48px 16px}
 .soon h3{font-size:1.2rem;font-weight:500;letter-spacing:.02em}
 .sfx{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
@@ -65,10 +73,11 @@ footer{border-top:1px solid var(--border);text-align:center;color:var(--muted);p
 </style>
 </head>
 <body>
-<header><h1>Twinko Jr's <b>Hub</b></h1><p>Overlays &nbsp;/&nbsp; Sound Effects</p></header>
+<header><h1>Twinko Jr's <b>Hub</b></h1><p>Overlays &nbsp;/&nbsp; Sound Effects &nbsp;/&nbsp; TTS</p></header>
 <nav id="tabs">
   <button class="active" data-t="overlays">Overlays</button>
   <button data-t="sfx">Sound Effects</button>
+  <button data-t="tts">TTS</button>
 </nav>
 <main>
 <section id="overlays" class="active">
@@ -84,6 +93,23 @@ footer{border-top:1px solid var(--border);text-align:center;color:var(--muted);p
   <div class="panel soon"><h3>Coming Soon&hellip;</h3></div>
 </section>
 
+<section id="tts">
+  <h2>TTS</h2>
+  <p class="sub">Text to speech powered by Fish Audio.</p>
+  <div class="panel">
+    <div class="two" style="margin-top:0">
+      <div><label class="lbl" for="tvoice" style="margin-top:0">Voice ID (optional)</label><input type="text" id="tvoice" placeholder="Voice model ID from fish.audio"></div>
+      <div><label class="lbl" for="tmodel" style="margin-top:0">Model</label>
+        <select id="tmodel"><option value="s2.1-pro">s2.1-pro</option><option value="s2-pro">s2-pro</option><option value="s1">s1</option></select></div>
+    </div>
+    <label class="lbl" for="ttext">Text</label>
+    <textarea id="ttext" rows="5" placeholder="Type what you want to hear..."></textarea>
+    <div class="row"><button class="btn" id="tgo" type="button">Generate</button><button class="btn alt" id="tdl" type="button" hidden>Download MP3</button></div>
+    <div class="err" id="terr"></div>
+    <audio id="tplay" controls hidden></audio>
+    <p class="note">This tool needs the page to be hosted on your own site, because Claude's preview blocks outside requests.</p>
+  </div>
+</section>
 </main>
 <footer>Twinko Jr's Hub</footer>
 
@@ -139,6 +165,38 @@ OVERLAYS.forEach((o,i)=>{
   list.appendChild(w);
 });
 
+
+// TTS (Fish Audio)
+const FISH_API_KEY='sk-fish-PsFCxuGTy1A_If36icfLNdbZPxuneCPJMdVTblbC6Z4';
+let tblob=null;
+const terr=document.getElementById('terr'),tplay=document.getElementById('tplay'),tgo=document.getElementById('tgo'),tdl=document.getElementById('tdl');
+async function saveBlob(blob,name){
+  if(dl){try{await dl.save({filename:name,data:blob})}catch(e){if(e&&e.code!=='declined')terr.textContent='Download unavailable: '+(e.message||'unknown error')}return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+tgo.onclick=async()=>{
+  terr.textContent='';
+  const key=FISH_API_KEY,text=document.getElementById('ttext').value.trim(),voice=document.getElementById('tvoice').value.trim();
+  if(!text){terr.textContent='Type some text first.';return}
+  const body={text,format:'mp3'};if(voice)body.reference_id=voice;
+  tgo.disabled=true;tgo.textContent='Generating...';
+  try{
+    const res=await fetch('https://api.fish.audio/v1/tts',{method:'POST',
+      headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json','model':document.getElementById('tmodel').value},
+      body:JSON.stringify(body)});
+    if(!res.ok){
+      const msg=res.status===401?'Fish Audio rejected the API key in the code (401). Replace FISH_API_KEY with a valid key.':res.status===402?'Not enough Fish Audio credit (402).':'Fish Audio returned an error ('+res.status+').';
+      throw new Error(msg);
+    }
+    tblob=await res.blob();
+    if(tplay.dataset.u)URL.revokeObjectURL(tplay.dataset.u);
+    const u=URL.createObjectURL(tblob);tplay.dataset.u=u;tplay.src=u;tplay.hidden=false;tdl.hidden=false;tplay.play().catch(()=>{});
+  }catch(e){
+    terr.textContent=(e instanceof TypeError)?'Could not reach Fish Audio. This usually means the page is running somewhere that blocks outside requests (like Claude\'s preview). Open the downloaded file on your own site instead.':e.message;
+  }finally{tgo.disabled=false;tgo.textContent='Generate'}
+};
+tdl.onclick=()=>{if(tblob)saveBlob(new Blob([tblob],{type:'audio/mpeg'}),'tts.mp3')};
 </script>
 </body>
 </html>
